@@ -4,7 +4,7 @@
  "schemaVersion": 39,
  "refresh": "5s",
  "time": {
-  "from": "now-1h",
+  "from": "now-30m",
   "to": "now"
  },
  "panels": [
@@ -104,7 +104,7 @@
     },
     "colorMode": "value",
     "graphMode": "none",
-    "textMode": "value_and_name"
+    "textMode": "value"
    },
    "fieldConfig": {
     "defaults": {},
@@ -136,7 +136,7 @@
     },
     "colorMode": "value",
     "graphMode": "none",
-    "textMode": "value_and_name"
+    "textMode": "value"
    },
    "fieldConfig": {
     "defaults": {},
@@ -167,7 +167,7 @@
     },
     "colorMode": "value",
     "graphMode": "none",
-    "textMode": "value_and_name"
+    "textMode": "value"
    },
    "fieldConfig": {
     "defaults": {},
