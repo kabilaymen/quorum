@@ -71,7 +71,7 @@ func TestCacheHitsAndInvalidation(t *testing.T) {
 // completed more than `bound` before the read started.
 func TestCacheBoundedStaleness(t *testing.T) {
 	const bound = time.Second
-	tc := startCluster(t, 5)
+	tc := startClusterWith(t, 5, 40) // compaction on: snapshots get installed under partitions
 	tc.waitLeader(t, 0)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

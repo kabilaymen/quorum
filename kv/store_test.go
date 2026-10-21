@@ -55,3 +55,28 @@ func TestRejectsReapply(t *testing.T) {
 		t.Fatal("applying the same index twice must fail")
 	}
 }
+
+func TestSnapshotRoundTrip(t *testing.T) {
+	a := NewStore()
+	a.Apply(1, Encode(Op{Type: Put, Key: "k", Value: "v1", Client: "c", Seq: 1}))
+	a.Apply(2, Encode(Op{Type: Put, Key: "j", Value: "w", Client: "c", Seq: 2}))
+	a.Apply(3, Encode(Op{Type: Delete, Key: "j", Client: "d", Seq: 1}))
+
+	b := NewStore()
+	if err := b.Restore(a.Snapshot()); err != nil {
+		t.Fatal(err)
+	}
+	if b.AppliedIndex() != 3 || b.Len() != 1 {
+		t.Fatalf("applied %d, %d keys", b.AppliedIndex(), b.Len())
+	}
+	_, r, _ := b.Apply(4, Encode(Op{Type: Get, Key: "k", Client: "e", Seq: 1}))
+	if r.Value != "v1" || r.Version != 1 {
+		t.Fatalf("get after restore = %+v (the version must survive too)", r)
+	}
+	// A retry of client c's last write, arriving after the snapshot, must be
+	// answered from the dedup table, not applied again.
+	_, r, _ = b.Apply(5, Encode(Op{Type: Put, Key: "j", Value: "w", Client: "c", Seq: 2}))
+	if b.Len() != 1 || r.Version != 2 {
+		t.Fatalf("retry re-applied after restore: %d keys, %+v", b.Len(), r)
+	}
+}

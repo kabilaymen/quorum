@@ -43,6 +43,7 @@ func main() {
 	httpAddr := flag.String("http", ":8080", "listen address for the client API")
 	tick := flag.Duration("tick", 10*time.Millisecond, "raft tick duration")
 	dataDir := flag.String("data", "", "directory for the write-ahead log (empty: in memory, not durable)")
+	snapEvery := flag.Uint64("snapshot-every", 1000, "compact the log every N applied entries (0: never)")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stdout, nil)).With("node", *id)
@@ -62,8 +63,9 @@ func main() {
 			ElectionTick: 15, HeartbeatTick: 3, // 150–300 ms election timeout at 10 ms ticks
 			Seed: time.Now().UnixNano(), CheckQuorum: true, PreVote: true,
 		},
-		TickRate: *tick,
-		DataDir:  *dataDir,
+		TickRate:      *tick,
+		DataDir:       *dataDir,
+		SnapshotEvery: *snapEvery,
 	}, tr)
 	if err != nil {
 		log.Error("open data dir", "dir", *dataDir, "err", err)

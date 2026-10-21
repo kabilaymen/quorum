@@ -24,6 +24,8 @@ type testCluster struct {
 	servers map[raft.NodeID]*server.Server
 	front   map[raft.NodeID]*swapHandler
 	urls    map[raft.NodeID]string
+	// snapEvery > 0 turns on log compaction (server.Config.SnapshotEvery).
+	snapEvery uint64
 }
 
 // swapHandler keeps a node's URL stable across restarts; while the node is
@@ -40,8 +42,13 @@ func (s *swapHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func startCluster(t *testing.T, n int) *testCluster {
 	t.Helper()
+	return startClusterWith(t, n, 0)
+}
+
+func startClusterWith(t *testing.T, n int, snapEvery uint64) *testCluster {
+	t.Helper()
 	tc := &testCluster{t: t, dir: t.TempDir(), net: server.NewMemNetwork(), servers: map[raft.NodeID]*server.Server{},
-		front: map[raft.NodeID]*swapHandler{}, urls: map[raft.NodeID]string{}}
+		front: map[raft.NodeID]*swapHandler{}, urls: map[raft.NodeID]string{}, snapEvery: snapEvery}
 	for i := 1; i <= n; i++ {
 		tc.ids = append(tc.ids, raft.NodeID(i))
 	}
@@ -67,6 +74,8 @@ func (tc *testCluster) start(id raft.NodeID) {
 		TickRate: 5 * time.Millisecond,
 		DataDir:  filepath.Join(tc.dir, fmt.Sprint(id)),
 		NoSync:   true, // the test simulates process crashes, not power loss
+
+		SnapshotEvery: tc.snapEvery,
 	}, tc.net.Join(id))
 	if err != nil {
 		tc.t.Fatal(err)

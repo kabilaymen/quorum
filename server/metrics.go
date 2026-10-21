@@ -19,6 +19,11 @@ type metrics struct {
 	dropped    prometheus.Counter
 	msgsSent   prometheus.Counter
 	msgsRecv   prometheus.Counter
+	firstIndex prometheus.Gauge
+
+	snapshotsTaken     prometheus.Counter
+	snapshotsInstalled prometheus.Counter
+
 	lastLeader bool
 }
 
@@ -42,8 +47,11 @@ func newMetrics() *metrics {
 	m.dropped = prometheus.NewCounter(prometheus.CounterOpts{Name: "quorum_watch_dropped_total", Help: "Watch streams closed because the client was too slow."})
 	m.msgsSent = prometheus.NewCounter(prometheus.CounterOpts{Name: "quorum_raft_messages_sent_total", Help: "Raft messages handed to the transport."})
 	m.msgsRecv = prometheus.NewCounter(prometheus.CounterOpts{Name: "quorum_raft_messages_received_total", Help: "Raft messages stepped into the node."})
+	m.firstIndex = prometheus.NewGauge(prometheus.GaugeOpts{Name: "quorum_raft_first_index", Help: "First log index still held in memory (older ones are in the snapshot)."})
+	m.snapshotsTaken = prometheus.NewCounter(prometheus.CounterOpts{Name: "quorum_snapshots_taken_total", Help: "Log compactions done by this node."})
+	m.snapshotsInstalled = prometheus.NewCounter(prometheus.CounterOpts{Name: "quorum_snapshots_installed_total", Help: "Snapshots received from a leader and installed."})
 	for _, c := range []prometheus.Collector{m.term, m.isLeader, m.commit, m.applied, m.elections, m.walSync,
-		m.requests, m.watchers, m.dropped, m.msgsSent, m.msgsRecv} {
+		m.requests, m.watchers, m.dropped, m.msgsSent, m.msgsRecv, m.firstIndex, m.snapshotsTaken, m.snapshotsInstalled} {
 		f(c)
 	}
 	return m
@@ -53,6 +61,7 @@ func (m *metrics) observeStatus(st Status) {
 	m.term.Set(float64(st.Term))
 	m.commit.Set(float64(st.CommitIndex))
 	m.applied.Set(float64(st.Applied))
+	m.firstIndex.Set(float64(st.FirstIndex))
 	leader := st.State == "leader"
 	if leader {
 		m.isLeader.Set(1)

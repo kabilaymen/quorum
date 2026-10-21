@@ -69,6 +69,17 @@ func (w *watchers) publish(ev Event) {
 	}
 }
 
+// closeAll disconnects every watcher; their clients drop their caches.
+func (w *watchers) closeAll() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for ch := range w.subs {
+		delete(w.subs, ch)
+		close(ch)
+	}
+	w.m.watchers.Set(0)
+}
+
 func watchHandler(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		flusher, ok := w.(http.Flusher)

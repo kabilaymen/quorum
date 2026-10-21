@@ -70,7 +70,7 @@ func TestLinearizableUnderPartitions(t *testing.T) {
 	if testing.Short() {
 		duration = time.Second
 	}
-	tc := startCluster(t, 5)
+	tc := startClusterWith(t, 5, 10) // frequent compaction: lagging nodes need snapshots under partitions
 	tc.waitLeader(t, 0)
 
 	start := time.Now()
@@ -150,6 +150,11 @@ func TestLinearizableUnderPartitions(t *testing.T) {
 	close(stop)
 	wg.Wait()
 
+	var installed uint64
+	for _, srv := range tc.servers {
+		installed += srv.Status().SnapshotsInstalled
+	}
+	t.Logf("snapshots installed by lagging nodes during the run: %d", installed)
 	res, info := porcupine.CheckOperationsVerbose(kvModel, history, 2*time.Minute)
 	t.Logf("%d operations checked", len(history))
 	if len(history) < 50 {

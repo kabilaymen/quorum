@@ -46,7 +46,7 @@ func Handler(s *Server, timeout time.Duration) http.Handler {
 		case errors.Is(err, ErrNotLeader):
 			w.Header().Set("X-Leader", strconv.FormatUint(uint64(s.Status().Leader), 10))
 			http.Error(w, err.Error(), http.StatusMisdirectedRequest)
-		case errors.Is(err, ErrLost), errors.Is(err, context.DeadlineExceeded):
+		case errors.Is(err, ErrLost), errors.Is(err, ErrUnknown), errors.Is(err, context.DeadlineExceeded):
 			// Outcome unknown or not applied: the client retries with the same Seq.
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		default:

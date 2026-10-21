@@ -109,3 +109,52 @@ func (s *Store) Apply(index uint64, data []byte) (Op, Result, error) {
 }
 
 func (s *Store) Len() int { return len(s.data) }
+
+// snapshotState is the serialized form of a Store. The dedup table is part of
+// it: a retry arriving after a snapshot must still be recognised.
+type snapshotState struct {
+	Applied  uint64                 `json:"applied"`
+	Data     map[string]snapItem    `json:"data"`
+	Sessions map[string]snapSession `json:"sessions"`
+}
+
+type snapItem struct {
+	Value   string `json:"v"`
+	Version uint64 `json:"ver"`
+}
+
+type snapSession struct {
+	Seq    uint64 `json:"s"`
+	Result Result `json:"r"`
+}
+
+// Snapshot serializes the whole state, as of AppliedIndex.
+func (s *Store) Snapshot() []byte {
+	st := snapshotState{Applied: s.applied, Data: make(map[string]snapItem, len(s.data)), Sessions: make(map[string]snapSession, len(s.sessions))}
+	for k, it := range s.data {
+		st.Data[k] = snapItem{Value: it.value, Version: it.version}
+	}
+	for c, sess := range s.sessions {
+		st.Sessions[c] = snapSession{Seq: sess.seq, Result: sess.result}
+	}
+	b, _ := json.Marshal(st)
+	return b
+}
+
+// Restore replaces the whole state with a snapshot taken by Snapshot.
+func (s *Store) Restore(b []byte) error {
+	var st snapshotState
+	if err := json.Unmarshal(b, &st); err != nil {
+		return fmt.Errorf("kv: bad snapshot: %w", err)
+	}
+	s.applied = st.Applied
+	s.data = make(map[string]item, len(st.Data))
+	for k, it := range st.Data {
+		s.data[k] = item{value: it.Value, version: it.Version}
+	}
+	s.sessions = make(map[string]session, len(st.Sessions))
+	for c, sess := range st.Sessions {
+		s.sessions[c] = session{seq: sess.Seq, result: sess.Result}
+	}
+	return nil
+}

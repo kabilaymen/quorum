@@ -21,6 +21,10 @@ var (
 	// was not applied; it is safe to retry.
 	ErrLost    = errors.New("proposal lost after leader change")
 	ErrStopped = errors.New("server stopped")
+	// ErrUnknown: the entry was covered by a snapshot from the leader before
+	// this node could apply it, so its result is not known here. Retrying with
+	// the same sequence number is safe: the dedup table answers if it applied.
+	ErrUnknown = errors.New("outcome unknown: replaced by a snapshot")
 )
 
 // Transport moves raft messages between nodes. Delivery is best effort:
@@ -36,6 +40,9 @@ type Config struct {
 	TickRate time.Duration // duration of one raft tick
 	DataDir  string        // write-ahead log location; empty = in memory only
 	NoSync   bool          // skip fsync (tests only)
+	// SnapshotEvery: compact the log once that many entries were applied
+	// since the last snapshot (0 = never). Bounds memory, disk and restart time.
+	SnapshotEvery uint64
 }
 
 type Status struct {
@@ -45,7 +52,10 @@ type Status struct {
 	Leader      raft.NodeID `json:"leader"`
 	CommitIndex uint64      `json:"commit_index"`
 	Applied     uint64      `json:"applied_index"`
+	FirstIndex  uint64      `json:"first_index"` // older entries are compacted into the snapshot
 	Keys        int         `json:"keys"`
+	// SnapshotsInstalled counts snapshots received from a leader.
+	SnapshotsInstalled uint64 `json:"snapshots_installed"`
 }
 
 type proposal struct {
@@ -77,6 +87,9 @@ type Server struct {
 	stopped sync.WaitGroup
 	waiters map[uint64]waiter // log index -> client waiting for it
 
+	lastSnap  uint64 // index of the latest snapshot
+	installed uint64 // snapshots received from a leader
+
 	status   atomic.Pointer[Status]
 	onApply  func(raft.Entry) // test hook
 	stopOnce sync.Once
@@ -89,26 +102,35 @@ func New(cfg Config, tr Transport) (*Server, error) {
 	var (
 		log     *wal.WAL
 		hs      raft.HardState
+		snap    raft.Snapshot
 		entries []raft.Entry
 	)
+	store := kv.NewStore()
 	if cfg.DataDir != "" {
 		var err error
 		if log, hs, entries, err = wal.Open(cfg.DataDir, wal.Options{NoSync: cfg.NoSync}); err != nil {
 			return nil, err
 		}
+		if snap = log.Snapshot(); snap.Index > 0 {
+			if err := store.Restore(snap.Data); err != nil {
+				log.Close()
+				return nil, err
+			}
+		}
 	}
 	m := newMetrics()
 	s := &Server{
-		cfg:     cfg,
-		m:       m,
-		watch:   watchers{m: m},
-		wal:     log,
-		node:    raft.Restart(cfg.Raft, hs, entries),
-		store:   kv.NewStore(),
-		tr:      tr,
-		propc:   make(chan proposal),
-		stopc:   make(chan struct{}),
-		waiters: map[uint64]waiter{},
+		cfg:      cfg,
+		m:        m,
+		watch:    watchers{m: m},
+		wal:      log,
+		node:     raft.RestartFromSnapshot(cfg.Raft, hs, snap, entries),
+		store:    store,
+		tr:       tr,
+		propc:    make(chan proposal),
+		stopc:    make(chan struct{}),
+		waiters:  map[uint64]waiter{},
+		lastSnap: snap.Index,
 	}
 	s.publishStatus()
 	return s, nil
@@ -181,7 +203,13 @@ func (s *Server) propose(p proposal) {
 func (s *Server) handleReady() {
 	rd := s.node.Ready()
 	// Persist before sending: once a vote or an append acknowledgement leaves
-	// this node, forgetting it after a crash would break Raft's safety.
+	// this node, forgetting it after a crash would break Raft's safety. A
+	// snapshot from the leader goes first: the new entries follow it.
+	if s.wal != nil && rd.Snapshot != nil {
+		if err := s.wal.SaveSnapshot(*rd.Snapshot); err != nil {
+			panic("quorum: cannot persist snapshot: " + err.Error())
+		}
+	}
 	if s.wal != nil && (rd.HardState != nil || len(rd.Entries) > 0) {
 		start := time.Now()
 		if err := s.wal.Save(rd.HardState, rd.Entries); err != nil {
@@ -191,6 +219,9 @@ func (s *Server) handleReady() {
 	}
 	s.m.msgsSent.Add(float64(len(rd.Messages)))
 	s.tr.Send(rd.Messages)
+	if rd.Snapshot != nil {
+		s.installSnapshot(*rd.Snapshot)
+	}
 	for _, e := range rd.Committed {
 		op, res, err := s.store.Apply(e.Index, e.Data)
 		// Only fresh writes carry the entry's own index as version
@@ -211,7 +242,48 @@ func (s *Server) handleReady() {
 			}
 		}
 	}
+	s.maybeSnapshot()
 	s.publishStatus()
+}
+
+// installSnapshot loads a snapshot sent by the leader into the state machine.
+func (s *Server) installSnapshot(snap raft.Snapshot) {
+	if err := s.store.Restore(snap.Data); err != nil {
+		panic("quorum: cannot load snapshot: " + err.Error())
+	}
+	s.lastSnap = snap.Index
+	// The entries it covers were never applied here one by one: their waiters
+	// cannot learn the result, and watchers missed their invalidations, so
+	// their clients must drop their caches (disconnecting them does that).
+	for index, w := range s.waiters {
+		if index <= snap.Index {
+			delete(s.waiters, index)
+			w.done <- outcome{err: ErrUnknown}
+		}
+	}
+	s.watch.closeAll()
+	s.installed++
+	s.m.snapshotsInstalled.Inc()
+}
+
+// maybeSnapshot compacts the log once SnapshotEvery entries were applied
+// since the previous snapshot.
+func (s *Server) maybeSnapshot() {
+	applied := s.store.AppliedIndex()
+	if s.cfg.SnapshotEvery == 0 || applied < s.lastSnap+s.cfg.SnapshotEvery {
+		return
+	}
+	snap, err := s.node.Compact(applied, s.store.Snapshot())
+	if err != nil {
+		panic("quorum: " + err.Error())
+	}
+	if s.wal != nil {
+		if err := s.wal.SaveSnapshot(snap); err != nil {
+			panic("quorum: cannot persist snapshot: " + err.Error())
+		}
+	}
+	s.lastSnap = snap.Index
+	s.m.snapshotsTaken.Inc()
 }
 
 func (s *Server) publishStatus() {
@@ -223,7 +295,10 @@ func (s *Server) publishStatus() {
 		Leader:      s.node.Leader(),
 		CommitIndex: s.node.CommitIndex(),
 		Applied:     s.store.AppliedIndex(),
-		Keys:        s.store.Len(),
+		FirstIndex:  s.node.FirstIndex(),
+
+		SnapshotsInstalled: s.installed,
+		Keys:               s.store.Len(),
 	})
 }
 
@@ -237,6 +312,8 @@ func (s *Server) Do(ctx context.Context, op kv.Op) (res kv.Result, err error) {
 			outcome = "not_leader"
 		case errors.Is(err, ErrLost):
 			outcome = "lost"
+		case errors.Is(err, ErrUnknown):
+			outcome = "unknown"
 		case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 			outcome = "timeout"
 		case err != nil:
