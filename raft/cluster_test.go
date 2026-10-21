@@ -25,6 +25,8 @@ type cluster struct {
 	applied map[NodeID][]Entry     // what each state machine applied, in order
 	leaders map[uint64]NodeID      // term -> leader (election safety)
 	round   int
+	preVote bool
+	noCheck bool // disable CheckQuorum (and with it the leader lease on votes)
 }
 
 type savedState struct {
@@ -38,8 +40,12 @@ type inflight struct {
 }
 
 func newCluster(t *testing.T, n int, seed int64) *cluster {
+	return newClusterWith(t, n, seed, false)
+}
+
+func newClusterWith(t *testing.T, n int, seed int64, preVote bool) *cluster {
 	c := &cluster{
-		t: t, rand: rand.New(rand.NewSource(seed)),
+		t: t, rand: rand.New(rand.NewSource(seed)), preVote: preVote,
 		nodes: map[NodeID]*Node{}, down: map[NodeID]bool{}, disk: map[NodeID]*savedState{},
 		cut: map[[2]NodeID]bool{}, applied: map[NodeID][]Entry{}, leaders: map[uint64]NodeID{},
 	}
@@ -54,7 +60,7 @@ func newCluster(t *testing.T, n int, seed int64) *cluster {
 }
 
 func (c *cluster) config(id NodeID, seed int64) Config {
-	return Config{ID: id, Peers: c.ids, ElectionTick: 10, HeartbeatTick: 2, MaxBatch: 8, Seed: seed, CheckQuorum: true}
+	return Config{ID: id, Peers: c.ids, ElectionTick: 10, HeartbeatTick: 2, MaxBatch: 8, Seed: seed, CheckQuorum: !c.noCheck, PreVote: c.preVote}
 }
 
 func (c *cluster) step() {
@@ -347,16 +353,24 @@ func TestRestartKeepsTermAndVote(t *testing.T) {
 // partitions and crash/restarts while proposals keep flowing, checking safety
 // after every round, then checks liveness once the faults stop.
 func TestRandomizedFaults(t *testing.T) {
-	runRandomized(t, 5, 0.01, 0.03)
+	runRandomized(t, 5, 0.01, 0.03, false)
+}
+
+func TestRandomizedFaultsPreVote(t *testing.T) {
+	runRandomized(t, 5, 0.01, 0.03, true)
 }
 
 // TestRandomizedCrashChurn: 3 nodes crashing and restarting constantly, the
 // setting where forgetting a vote or an entry on restart breaks safety.
 func TestRandomizedCrashChurn(t *testing.T) {
-	runRandomized(t, 3, 0.08, 0.25)
+	runRandomized(t, 3, 0.08, 0.25, false)
 }
 
-func runRandomized(t *testing.T, size int, crashP, restartP float64) {
+func TestRandomizedCrashChurnPreVote(t *testing.T) {
+	runRandomized(t, 3, 0.08, 0.25, true)
+}
+
+func runRandomized(t *testing.T, size int, crashP, restartP float64, preVote bool) {
 	seeds := 40
 	if testing.Short() {
 		seeds = 5
@@ -366,7 +380,7 @@ func runRandomized(t *testing.T, size int, crashP, restartP float64) {
 	}
 	for seed := int64(100); seed < 100+int64(seeds); seed++ {
 		t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) {
-			c := newCluster(t, size, seed)
+			c := newClusterWith(t, size, seed, preVote)
 			c.dropP = 0.1
 			c.maxLag = 3
 			proposed := 0

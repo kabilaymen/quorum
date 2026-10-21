@@ -57,7 +57,7 @@ func (c *cluster) start(id raft.NodeID) error {
 	dir := filepath.Join(c.dir, fmt.Sprint(id))
 	s, err := server.New(server.Config{
 		Raft: raft.Config{ID: id, Peers: c.ids, ElectionTick: 15, HeartbeatTick: 3,
-			Seed: time.Now().UnixNano() + int64(id), CheckQuorum: true},
+			Seed: time.Now().UnixNano() + int64(id), CheckQuorum: true, PreVote: true},
 		TickRate: 10 * time.Millisecond,
 		DataDir:  dir,
 		NoSync:   !c.fsync,

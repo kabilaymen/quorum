@@ -60,7 +60,7 @@ func main() {
 		Raft: raft.Config{
 			ID: raft.NodeID(*id), Peers: ids,
 			ElectionTick: 15, HeartbeatTick: 3, // 150–300 ms election timeout at 10 ms ticks
-			Seed: time.Now().UnixNano(), CheckQuorum: true,
+			Seed: time.Now().UnixNano(), CheckQuorum: true, PreVote: true,
 		},
 		TickRate: *tick,
 		DataDir:  *dataDir,

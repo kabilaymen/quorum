@@ -21,10 +21,11 @@ const (
 	Follower State = iota
 	Candidate
 	Leader
+	PreCandidate // asking whether it could win, before bumping its term
 )
 
 func (s State) String() string {
-	return [...]string{"follower", "candidate", "leader"}[s]
+	return [...]string{"follower", "candidate", "leader", "pre-candidate"}[s]
 }
 
 type MsgType int
@@ -34,6 +35,10 @@ const (
 	MsgVoteResp
 	MsgApp
 	MsgAppResp
+	// MsgPreVote carries the term the sender would campaign in (its term + 1)
+	// without the sender having moved to it.
+	MsgPreVote
+	MsgPreVoteResp
 )
 
 type Entry struct {
@@ -85,6 +90,12 @@ type Config struct {
 	// minority keeps believing it leads (it can never commit, but it keeps
 	// serving as a source of truth to anyone who asks it for its state).
 	CheckQuorum bool
+	// PreVote (Ongaro's thesis, §9.6): before starting an election, a node asks
+	// the others whether they would vote for it, without incrementing its
+	// term. They say no while they still hear from a leader. A node cut off
+	// from the leader, or restarted and not yet reached by it, therefore
+	// cannot inflate its term and depose a healthy leader.
+	PreVote bool
 }
 
 // Ready is the output of the node since the previous call. The caller must
@@ -173,8 +184,16 @@ func (n *Node) quorum() int            { return len(n.cfg.Peers)/2 + 1 }
 
 func (n *Node) send(m Message) {
 	m.From = n.cfg.ID
-	m.Term = n.term
+	if m.Term == 0 {
+		m.Term = n.term // pre-votes and granted pre-vote responses set their own
+	}
 	n.msgs = append(n.msgs, m)
+}
+
+// heardFromLeader reports whether a leader was heard from less than a
+// minimum election timeout ago. A leader counts itself.
+func (n *Node) heardFromLeader() bool {
+	return n.lead != 0 && n.electionElapsed < n.cfg.ElectionTick
 }
 
 // ---------------------------------------------------------------- roles
@@ -192,6 +211,32 @@ func (n *Node) becomeFollower(term uint64, lead NodeID) {
 	n.state = Follower
 	n.lead = lead
 	n.resetElectionTimer()
+}
+
+func (n *Node) campaign() {
+	if n.cfg.PreVote {
+		n.becomePreCandidate()
+	} else {
+		n.becomeCandidate()
+	}
+}
+
+// becomePreCandidate polls the cluster without touching term or vote, so
+// nothing needs to be persisted and nobody is disturbed if the poll fails.
+func (n *Node) becomePreCandidate() {
+	n.state = PreCandidate
+	n.lead = 0
+	n.votes = map[NodeID]bool{n.cfg.ID: true}
+	n.resetElectionTimer()
+	if n.quorum() == 1 {
+		n.becomeCandidate()
+		return
+	}
+	for _, p := range n.cfg.Peers {
+		if p != n.cfg.ID {
+			n.send(Message{Type: MsgPreVote, To: p, Term: n.term + 1, LastLogIndex: n.LastIndex(), LastLogTerm: n.lastTerm()})
+		}
+	}
 }
 
 func (n *Node) becomeCandidate() {
@@ -256,7 +301,7 @@ func (n *Node) Tick() {
 	}
 	n.electionElapsed++
 	if n.electionElapsed >= n.randomizedTimeout {
-		n.becomeCandidate()
+		n.campaign()
 	}
 }
 
@@ -285,16 +330,32 @@ func (n *Node) appendEntry(data []byte) Entry {
 func (n *Node) Step(m Message) {
 	switch {
 	case m.Term > n.term:
-		lead := NodeID(0)
-		if m.Type == MsgApp {
-			lead = m.From
+		if (m.Type == MsgVote || m.Type == MsgPreVote) && n.cfg.CheckQuorum && n.heardFromLeader() {
+			// The leader is alive as far as we know (and with CheckQuorum it
+			// would have stepped down otherwise): this candidate is most likely
+			// a node coming back from a partition or a restart. Ignoring it
+			// keeps it from deposing a healthy leader.
+			return
 		}
-		n.becomeFollower(m.Term, lead)
+		switch {
+		case m.Type == MsgPreVote:
+			// A pre-vote is a question about a future term: ours does not change.
+		case m.Type == MsgPreVoteResp && m.Granted:
+			// A granted pre-vote echoes the term the pre-candidate asked for.
+		default:
+			lead := NodeID(0)
+			if m.Type == MsgApp {
+				lead = m.From
+			}
+			n.becomeFollower(m.Term, lead)
+		}
 	case m.Term < n.term:
 		// Tell stale candidates and leaders about the newer term so they step down.
 		switch m.Type {
 		case MsgVote:
 			n.send(Message{Type: MsgVoteResp, To: m.From, Granted: false})
+		case MsgPreVote:
+			n.send(Message{Type: MsgPreVoteResp, To: m.From, Granted: false})
 		case MsgApp:
 			n.send(Message{Type: MsgAppResp, To: m.From, Success: false, Match: n.LastIndex()})
 		}
@@ -304,7 +365,9 @@ func (n *Node) Step(m Message) {
 	switch m.Type {
 	case MsgVote:
 		n.handleVote(m)
-	case MsgVoteResp:
+	case MsgPreVote:
+		n.handlePreVote(m)
+	case MsgVoteResp, MsgPreVoteResp:
 		n.handleVoteResp(m)
 	case MsgApp:
 		if n.state == Leader {
@@ -359,8 +422,26 @@ func (n *Node) handleVote(m Message) {
 	n.send(Message{Type: MsgVoteResp, To: m.From, Granted: grant})
 }
 
+// handlePreVote answers "would you vote for me in term m.Term?". Nothing is
+// recorded: a pre-vote is a question, not a promise.
+func (n *Node) handlePreVote(m Message) {
+	grant := m.Term > n.term && !n.heardFromLeader() && n.upToDate(m.LastLogTerm, m.LastLogIndex)
+	resp := Message{Type: MsgPreVoteResp, To: m.From, Granted: grant}
+	if grant {
+		resp.Term = m.Term
+	}
+	n.send(resp)
+}
+
 func (n *Node) handleVoteResp(m Message) {
-	if n.state != Candidate {
+	want := Candidate
+	if m.Type == MsgPreVoteResp {
+		want = PreCandidate
+		if m.Granted && m.Term != n.term+1 {
+			return // granted for an older poll
+		}
+	}
+	if n.state != want {
 		return
 	}
 	n.votes[m.From] = m.Granted
@@ -373,6 +454,8 @@ func (n *Node) handleVoteResp(m Message) {
 		}
 	}
 	switch {
+	case granted >= n.quorum() && want == PreCandidate:
+		n.becomeCandidate()
 	case granted >= n.quorum():
 		n.becomeLeader()
 	case rejected >= n.quorum():

@@ -63,7 +63,7 @@ func startCluster(t *testing.T, n int) *testCluster {
 func (tc *testCluster) start(id raft.NodeID) {
 	tc.t.Helper()
 	s, err := server.New(server.Config{
-		Raft:     raft.Config{ID: id, Peers: tc.ids, ElectionTick: 10, HeartbeatTick: 2, Seed: time.Now().UnixNano(), CheckQuorum: true},
+		Raft:     raft.Config{ID: id, Peers: tc.ids, ElectionTick: 10, HeartbeatTick: 2, Seed: time.Now().UnixNano(), CheckQuorum: true, PreVote: true},
 		TickRate: 5 * time.Millisecond,
 		DataDir:  filepath.Join(tc.dir, fmt.Sprint(id)),
 		NoSync:   true, // the test simulates process crashes, not power loss
