@@ -37,6 +37,9 @@ for repo in vigil quorum; do
     build=""
     $c pull -q || { echo "$repo: pull failed, building on the VM"; build="--build"; }
     $c up -d $build --remove-orphans
+    # prometheus.yml is bind-mounted as a single file: git pull replaces the
+    # file, and the container keeps reading the old one until it restarts.
+    $c restart prometheus >/dev/null
   )
 done
 (cd "$home/quorum/deploy/edge" && docker compose up -d)
