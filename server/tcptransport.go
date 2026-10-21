@@ -73,6 +73,10 @@ func (t *TCPTransport) sendLoop(id raft.NodeID, p *peer) {
 	defer t.wg.Done()
 	var conn net.Conn
 	var enc *gob.Encoder
+	// Outage bookkeeping, logged once when the peer becomes unreachable and
+	// once when it is back, so failovers can be lined up with elections.
+	var failedDials int
+	var downSince time.Time
 	for {
 		select {
 		case <-t.done:
@@ -84,13 +88,22 @@ func (t *TCPTransport) sendLoop(id raft.NodeID, p *peer) {
 			if conn == nil {
 				c, err := net.DialTimeout("tcp", p.addr, 500*time.Millisecond)
 				if err != nil {
+					if failedDials == 0 {
+						downSince = time.Now()
+						t.log.Warn("peer unreachable", "peer", id, "err", err)
+					}
+					failedDials++
 					continue // peer down: drop, retry on the next message
+				}
+				if failedDials > 0 {
+					t.log.Info("peer reconnected", "peer", id, "failed_dials", failedDials, "down_for", time.Since(downSince).Round(time.Millisecond), "queued", len(p.queue))
+					failedDials = 0
 				}
 				conn, enc = c, gob.NewEncoder(c)
 			}
 			conn.SetWriteDeadline(time.Now().Add(time.Second))
 			if err := enc.Encode(&m); err != nil {
-				t.log.Debug("send failed", "peer", id, "err", err)
+				t.log.Info("send failed, closing connection", "peer", id, "err", err)
 				conn.Close()
 				conn = nil
 			}
