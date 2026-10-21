@@ -55,6 +55,10 @@ How it was built, the bugs found on the way and how they were fixed: [`JOURNAL.m
 
 ## Performance
 
+Current code on a 4-vCPU Linux GitHub runner: **~6,070 durable writes/s (p50 2.4 ms, p99 7.4 ms),
+leader failover median 212 ms**. The table below is the original run on a Windows desktop, where
+the optimisations were measured before and after.
+
 3 nodes, 16 clients, one desktop machine over loopback (full tables and method in
 [`bench/RESULTS.md`](bench/RESULTS.md), reproduce with `make bench` / `go run ./cmd/bench`):
 

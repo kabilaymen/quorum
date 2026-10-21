@@ -8,6 +8,26 @@ is noticeable on a desktop (p99.9 and failover especially).
 to time one fast operation (Windows: ~0.4 ms steps); percentiles below the clock resolution are
 shown as `< x ms`.
 
+## Current code on a GitHub runner
+
+Run by the `bench` workflow on 2026-10-21
+([actions/runs/39597977740](https://github.com/kabilaymen/quorum/actions/runs/39597977740)), with
+PreVote and log compaction (snapshot every 1,000 entries) — Linux, 4 vCPU, 3 nodes and 16 clients
+on one machine over loopback, 64-byte values:
+
+| Workload | fsync | ops/s | mean | p50 | p99 | p99.9 |
+|---|---|---:|---:|---:|---:|---:|
+| Writes | yes | 6,070 | 2.64 ms | 2.41 ms | 7.37 ms | 31.2 ms |
+| Linearizable reads | yes | 6,558 | 2.44 ms | 2.26 ms | 7.30 ms | 15.4 ms |
+| Cached reads | yes | ~1,036,000 | 0.015 ms | < 0.01 ms | < 0.01 ms | 4.4 ms |
+| Writes | no | 14,861 | 1.08 ms | 0.91 ms | 4.10 ms | 11.5 ms |
+| Linearizable reads | no | 16,043 | 1.00 ms | 0.88 ms | 3.89 ms | 5.4 ms |
+
+Failover (leader killed → next successful write), 7 runs with fsync: 202–275 ms, median 212 ms.
+
+The sections below are the original measurements on a Windows desktop (20 CPUs, before PreVote
+and snapshots). Compare rows within one environment, not across them.
+
 ## With fsync (durable)
 
 Environment: windows/amd64, 20 CPUs, single machine (loopback) — 3 nodes, 16 clients, 64-byte values, fsync=true, clock resolution 0.514 ms
