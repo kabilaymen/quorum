@@ -152,7 +152,7 @@
     },
     "overrides": []
    },
-   "description": "About 6 expected: one per chaos round (every 10 minutes)."
+   "description": "One or two per chaos round (every 10 minutes), more right after a deployment restarts the nodes."
   },
   {
    "type": "stat",
