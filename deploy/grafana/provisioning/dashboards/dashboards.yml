@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: quorum
+    folder: Quorum
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

@@ -1,0 +1,26 @@
+# Caddy, the only container with public ports. Start it after the two demo
+# stacks:  docker network create edge && docker compose up -d
+name: edge
+
+services:
+  caddy:
+    image: caddy:2.8.4
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+    networks: [edge]
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  edge:
+    external: true

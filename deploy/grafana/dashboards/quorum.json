@@ -1,0 +1,313 @@
+{
+ "uid": "quorum",
+ "title": "Quorum — Raft cluster",
+ "schemaVersion": 39,
+ "refresh": "5s",
+ "time": {
+  "from": "now-1h",
+  "to": "now"
+ },
+ "panels": [
+  {
+   "type": "text",
+   "title": "",
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 3
+   },
+   "options": {
+    "mode": "markdown",
+    "content": "**Quorum**: a 3-node key-value store on a from-scratch Raft implementation. A light client writes and reads continuously, and every 10 minutes the current leader is killed and restarted: watch the term go up, leadership move, and the commit index keep growing. [Code and design](https://github.com/kabilaymen/quorum)"
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Node role",
+   "gridPos": {
+    "x": 0,
+    "y": 3,
+    "w": 9,
+    "h": 4
+   },
+   "targets": [
+    {
+     "expr": "max by (node) (quorum_raft_is_leader)",
+     "legendFormat": "node {{node}}",
+     "instant": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value_and_name"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "1": {
+         "text": "leader",
+         "color": "green"
+        },
+        "0": {
+         "text": "follower",
+         "color": "blue"
+        }
+       }
+      },
+      {
+       "type": "special",
+       "options": {
+        "match": "null",
+        "result": {
+         "text": "down",
+         "color": "red"
+        }
+       }
+      }
+     ]
+    },
+    "overrides": []
+   },
+   "description": "Leader or follower, from each node's own view. A killed node disappears for ~20 s."
+  },
+  {
+   "type": "stat",
+   "title": "Term",
+   "gridPos": {
+    "x": 9,
+    "y": 3,
+    "w": 5,
+    "h": 4
+   },
+   "targets": [
+    {
+     "expr": "max(quorum_raft_term)",
+     "legendFormat": "",
+     "instant": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value_and_name"
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "description": "Raft term: increases with every election."
+  },
+  {
+   "type": "stat",
+   "title": "Leader changes (24 h)",
+   "gridPos": {
+    "x": 14,
+    "y": 3,
+    "w": 5,
+    "h": 4
+   },
+   "targets": [
+    {
+     "expr": "sum(increase(quorum_raft_leader_changes_total[24h]))",
+     "legendFormat": "",
+     "instant": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value_and_name"
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   }
+  },
+  {
+   "type": "stat",
+   "title": "Nodes up",
+   "gridPos": {
+    "x": 19,
+    "y": 3,
+    "w": 5,
+    "h": 4
+   },
+   "targets": [
+    {
+     "expr": "sum(up{job=\"quorum\"})",
+     "legendFormat": "",
+     "instant": true
+    }
+   ],
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value_and_name"
+   },
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Commit index per node",
+   "gridPos": {
+    "x": 0,
+    "y": 7,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "expr": "max by (node) (quorum_raft_commit_index)",
+     "legendFormat": "node {{node}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "description": "Keeps growing through failovers; a restarted node catches up from the leader's log."
+  },
+  {
+   "type": "timeseries",
+   "title": "Term",
+   "gridPos": {
+    "x": 12,
+    "y": 7,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "expr": "max by (node) (quorum_raft_term)",
+     "legendFormat": "node {{node}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Client requests per second (served by each node)",
+   "gridPos": {
+    "x": 0,
+    "y": 15,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "expr": "sum by (op, outcome) (rate(quorum_request_seconds_count[1m]))",
+     "legendFormat": "{{op}} {{outcome}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps"
+    },
+    "overrides": []
+   },
+   "description": "not_leader = a follower redirected the client; lost/timeout show up briefly around failovers."
+  },
+  {
+   "type": "timeseries",
+   "title": "Write latency (PUT, successful)",
+   "gridPos": {
+    "x": 12,
+    "y": 15,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "expr": "histogram_quantile(0.5, sum by (le) (rate(quorum_request_seconds_bucket{op=\"put\",outcome=\"ok\"}[2m])))",
+     "legendFormat": "p50"
+    },
+    {
+     "expr": "histogram_quantile(0.99, sum by (le) (rate(quorum_request_seconds_bucket{op=\"put\",outcome=\"ok\"}[2m])))",
+     "legendFormat": "p99"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s"
+    },
+    "overrides": []
+   },
+   "description": "Replicated to a majority and fsync'd on each node before the reply."
+  },
+  {
+   "type": "timeseries",
+   "title": "WAL save duration (write + fsync), p99",
+   "gridPos": {
+    "x": 0,
+    "y": 23,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "expr": "histogram_quantile(0.99, sum by (le, node) (rate(quorum_wal_save_seconds_bucket[2m])))",
+     "legendFormat": "node {{node}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s"
+    },
+    "overrides": []
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Raft messages per second",
+   "gridPos": {
+    "x": 12,
+    "y": 23,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "expr": "sum by (node) (rate(quorum_raft_messages_sent_total[1m]))",
+     "legendFormat": "sent by {{node}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   }
+  }
+ ]
+}

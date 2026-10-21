@@ -1,0 +1,79 @@
+# Production overrides for the public demo (one small VM behind Caddy):
+#   docker network create edge   # once, shared with the Caddy stack in deploy/edge
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# Nothing is published on the host: Caddy reaches Grafana and /status over the
+# "edge" network. Client writes are not exposed publicly.
+
+x-logging: &logging
+  driver: json-file
+  options: {max-size: "10m", max-file: "3"}
+
+services:
+  # "ports: !reset" has to be written on each service: the tag is lost through
+  # a YAML anchor.
+  node1:
+    ports: !reset []
+    mem_limit: 128m
+    logging: *logging
+    networks: [default, edge]
+  node2:
+    ports: !reset []
+    mem_limit: 128m
+    logging: *logging
+    networks: [default, edge]
+  node3:
+    ports: !reset []
+    mem_limit: 128m
+    logging: *logging
+    networks: [default, edge]
+
+  loadgen:
+    build: .
+    entrypoint: ["/loadgen"]
+    command: ["-rate", "5"]
+    depends_on: [node1, node2, node3]
+    restart: unless-stopped
+    mem_limit: 64m
+    logging: *logging
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus:/prometheus
+    restart: unless-stopped
+    mem_limit: 256m
+    logging: *logging
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    environment:
+      GF_SERVER_ROOT_URL: https://quorum.aymenkabil.me
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set it in .env}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/quorum.json
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on: [prometheus]
+    restart: unless-stopped
+    mem_limit: 256m
+    logging: *logging
+    networks:
+      default: {}
+      edge:
+        aliases: [quorum-grafana]
+
+volumes:
+  prometheus:
+
+networks:
+  edge:
+    external: true

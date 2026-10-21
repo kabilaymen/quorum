@@ -1,0 +1,22 @@
+# HTTPS entry point for the public demos. Caddy obtains and renews the
+# certificates itself (Let's Encrypt) once DNS points at the VM.
+
+vigil.aymenkabil.me {
+	encode gzip
+	reverse_proxy vigil-grafana:3000
+}
+
+quorum.aymenkabil.me {
+	encode gzip
+	# Read-only cluster status from whichever node answers first.
+	handle /status {
+		reverse_proxy node1:8080 node2:8080 node3:8080 {
+			lb_policy first
+			lb_try_duration 2s
+			fail_duration 10s
+		}
+	}
+	handle {
+		reverse_proxy quorum-grafana:3000
+	}
+}
