@@ -1,0 +1,23 @@
+name: ci
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test -race ./...
+      - name: Randomized fault injection (500 seeds)
+        run: RAFT_SEEDS=500 go test -run Randomized ./raft
+      - name: Linearizability under partitions (20 s)
+        run: LIN_SECONDS=20 go test -timeout 10m -run Linearizable ./server
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build .

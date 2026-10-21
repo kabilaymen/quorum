@@ -1,0 +1,27 @@
+name: quorum
+
+x-node: &node
+  build: .
+  restart: unless-stopped
+
+services:
+  node1:
+    <<: *node
+    command: ["-id", "1", "-peers", "1=node1:7000,2=node2:7000,3=node3:7000", "-data", "/data"]
+    volumes: ["data1:/data"]
+    ports: ["8081:8080"]
+  node2:
+    <<: *node
+    command: ["-id", "2", "-peers", "1=node1:7000,2=node2:7000,3=node3:7000", "-data", "/data"]
+    volumes: ["data2:/data"]
+    ports: ["8082:8080"]
+  node3:
+    <<: *node
+    command: ["-id", "3", "-peers", "1=node1:7000,2=node2:7000,3=node3:7000", "-data", "/data"]
+    volumes: ["data3:/data"]
+    ports: ["8083:8080"]
+
+volumes:
+  data1:
+  data2:
+  data3:
