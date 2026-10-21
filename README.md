@@ -3,9 +3,10 @@
 A replicated, linearizable key-value store built on a from-scratch implementation of
 [Raft](https://raft.github.io/raft.pdf), tested against message loss, partitions and crashes.
 
-> Status: Raft core (with CheckQuorum), replicated KV, write-ahead log, coherent client cache,
-> HTTP API, TCP transport and Docker cluster working.
-> Next: k3s deployment with public Grafana dashboards.
+> Status: Raft core (CheckQuorum, PreVote, log compaction with snapshot transfer), replicated KV,
+> write-ahead log, coherent client cache, HTTP API, TCP transport. Deployed on a small cloud VM:
+> **[live dashboard](https://quorum.aymenkabil.me)**, where the leader is killed every 10 minutes.
+> Next: k3s, membership changes.
 
 How it was built, the bugs found on the way and how they were fixed: [`JOURNAL.md`](JOURNAL.md).
 
@@ -42,6 +43,15 @@ How it was built, the bugs found on the way and how they were fixed: [`JOURNAL.m
   invalidations) makes both cache tests fail.
 - **CheckQuorum**: a leader that has not heard from a majority for one election timeout steps down,
   so an isolated node stops presenting itself as healthy.
+- **PreVote and leader lease**: a node that cannot hear the leader (partitioned, or restarted and
+  not yet reached) first asks whether it could win, without bumping its term, and nodes that still
+  hear a leader ignore it. Added after an election storm seen on the deployed cluster
+  ([`JOURNAL.md`](JOURNAL.md), section 10); each protection has a test that fails without it.
+- **Log compaction**: every 1,000 applied entries the state machine (including the dedup table) is
+  snapshotted and the log prefix dropped, in memory and in the WAL (snapshot written atomically,
+  then the log rewritten; a crash in between is recovered). A follower too far behind receives the
+  snapshot. The fault-injection suites run with a snapshot every 10 entries (hundreds installed
+  per run), and the linearizability check runs with compaction on.
 
 ## Performance
 
@@ -79,7 +89,7 @@ index, WAL fsync latency, request latency by operation and outcome, watch stream
 |---|---|
 | `raft` | Consensus state machine (pure, deterministic) |
 | `kv` | Replicated key-value state machine, dedup, versions |
-| `wal` | Write-ahead log: checksummed records, fsync, torn-write recovery |
+| `wal` | Write-ahead log: checksummed records, fsync, torn-write recovery, snapshots |
 | `server` | Real-time event loop, TCP and in-memory transports, HTTP API |
 | `client` | Leader discovery, redirects, retries with the same sequence number |
 | `cmd/quorum` | Node binary |
@@ -112,6 +122,6 @@ LIN_SECONDS=20 go test -run Linearizable ./server      # long linearizability ru
 
 ## Known limitations
 
-- No log compaction / snapshots yet: the log grows forever and a restart replays it entirely.
-- No membership changes, no PreVote (a node returning from a partition forces an election).
+- No membership changes: the set of nodes is fixed at start.
+- A snapshot is sent in one message (fine for this state machine; a large one would be chunked).
 - Benchmarks run on a single machine over loopback; numbers on a real network will differ.

@@ -82,7 +82,7 @@ CheckQuorum, a leader that hears from no majority for an election timeout steps 
 PreVote, keeps starting elections, so its term grows. When the partition healed, its higher term
 forced a new election, and the entry the majority had just proposed — not yet committed — was
 legitimately lost. Raft was right; the test had healed too early. It now waits for the majority
-side to commit before healing. PreVote, which prevents this disruption, is still not implemented.
+side to commit before healing. PreVote, which prevents this disruption, came later (section 11).
 
 ## 7. Coherent client cache
 
@@ -168,9 +168,36 @@ Third finding, from the memory graph: with no log compaction, every entry stays 
 under a day. Until snapshots exist, the demo runs at 2 operations/s and its data is wiped every
 6 hours (the dashboard says so).
 
+## 11. PreVote and log compaction
+
+**PreVote.** The production storm was a textbook case for it. Two protections went in: the pre-vote
+round (a node asks whether it could win without bumping its term; nodes that heard a leader less than
+an election timeout ago say no) and, with CheckQuorum, ignoring higher-term vote requests while a
+leader is heard (etcd's leader lease).
+
+A first test surprised me: the "control" test meant to show the old disruption passed silently,
+because the lease alone already stops a deaf node. And the pre-vote tests still passed when I removed
+the pre-vote rule: a deaf node never receives the answers to its pre-votes, so it can never become a
+candidate anyway. The rule only matters for a node cut from the leader but still talking to the other
+followers, so that is the test that now guards it (`TestPreVoteRefusedWhileLeaderIsHeard`, which
+fails without the rule).
+
+**Snapshots.** `log[0]` now stands for the latest snapshot and every index goes through an offset.
+The randomized suites passed on the first try, which made me check that they exercised anything: they
+now count installed snapshots (hundreds per run) and fail at zero. Two deliberate mutations still went
+unnoticed over 200 seeds — keeping a follower's suffix when its entry at the snapshot index has another
+term, and acknowledging beyond the snapshot on a stale append. Both are wrong but need a precise
+interleaving that random runs almost never produce, so each got a targeted test that fails on the
+mutation. Same lesson as the forgotten vote in section 5.
+
+In the WAL, the snapshot file is written atomically first, then the log is rewritten without the
+covered prefix; Open applies the same filter, so a crash between the two steps is harmless (tested).
+The linearizability check runs with a snapshot every 10 entries; at first it ran with 40 and the
+lagging nodes caught up without a single snapshot, so the test was not covering the path.
+
+With compaction, the demo no longer needs its 6-hour reset.
+
 ## Still missing
 
-- Snapshots / log compaction (the log grows forever; restart replays everything).
-- PreVote (a node coming back from a partition forces an election).
 - Membership changes.
 - ReadIndex or leases for cheaper linearizable reads.

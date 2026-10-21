@@ -30,11 +30,12 @@ done
 (cd "$home/quorum/deploy/edge" && docker compose up -d)
 
 chaos="*/10 * * * * $home/quorum/deploy/chaos.sh >> $home/chaos.log 2>&1"
-# The reset runs at minute 5, between two chaos rounds.
-reset="5 */6 * * * $home/quorum/deploy/reset-demo.sh >> $home/chaos.log 2>&1"
+# The log is compacted (snapshots), so the cluster no longer needs periodic
+# resets; deploy/reset-demo.sh stays available for a manual one. Older
+# deployments installed it in cron: the grep removes that line.
 # "|| true": with no crontab yet, grep matches nothing and set -e would stop
-# the block before the new lines are written.
-{ crontab -l 2>/dev/null | grep -v -e 'deploy/chaos.sh' -e 'deploy/reset-demo.sh' || true; echo "$chaos"; echo "$reset"; } | crontab -
+# the block before the new line is written.
+{ crontab -l 2>/dev/null | grep -v -e 'deploy/chaos.sh' -e 'deploy/reset-demo.sh' || true; echo "$chaos"; } | crontab -
 
 docker compose ls
 echo "Grafana admin password: $home/.grafana-admin"

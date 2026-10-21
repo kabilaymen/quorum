@@ -1,8 +1,7 @@
 #!/bin/sh
-# Wipes the demo cluster's data and starts it fresh. Needed because Quorum has
-# no log compaction yet: the whole log stays in memory and is replayed on every
-# restart, so without a reset a node would hit its memory limit within a day.
-# Run from cron on the VM every 6 hours (installed by deploy.sh).
+# Wipes the demo cluster's data and starts it fresh. Ran every 6 hours from
+# cron before log compaction existed (the whole log stayed in memory); now only
+# for a manual reset of the demo.
 set -eu
 cd "$(dirname "$0")/.."
 compose="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
