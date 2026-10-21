@@ -1,0 +1,25 @@
+name: bench
+# Benchmarks on a GitHub runner (Linux, clean machine, fine-grained clock):
+# 3 nodes and the clients share one machine, over loopback.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["cmd/bench/**", ".github/workflows/bench.yml"]
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: With fsync
+        run: go run ./cmd/bench -duration 8s -failovers 7 -out fsync.json
+      - name: Without fsync
+        run: go run ./cmd/bench -duration 8s -failovers 7 -fsync=false -out nofsync.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: "*.json"

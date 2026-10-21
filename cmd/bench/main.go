@@ -61,6 +61,8 @@ func (c *cluster) start(id raft.NodeID) error {
 		TickRate: 10 * time.Millisecond,
 		DataDir:  dir,
 		NoSync:   !c.fsync,
+
+		SnapshotEvery: 1000, // as in the node binary: compaction is part of the cost
 	}, tr)
 	if err != nil {
 		tr.Close()
@@ -336,6 +338,21 @@ func main() {
 		}
 	}
 	printMarkdown(res)
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		// Annotations are public on a public repository (logs need a login).
+		fs := "fsync"
+		if !res.Fsync {
+			fs = "no fsync"
+		}
+		note := func(name string, st Stats) {
+			fmt.Printf("::notice title=Bench %s - %s::%.0f ops/s, mean %.3f ms, p50 %.2f ms, p99 %.2f ms, p99.9 %.2f ms, %d errors\n",
+				fs, name, st.Throughput, st.MeanMs, st.P50ms, st.P99ms, st.P999ms, st.Errors)
+		}
+		note("writes", res.Writes)
+		note("linearizable reads", res.Reads)
+		note("cached reads", res.Cached)
+		fmt.Printf("::notice title=Bench %s - failover::%v ms (%s)\n", fs, res.Failover, res.Env)
+	}
 	if *out != "" {
 		b, _ := json.MarshalIndent(res, "", "  ")
 		os.WriteFile(*out, b, 0o644)
