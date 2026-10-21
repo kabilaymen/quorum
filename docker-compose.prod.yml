@@ -15,18 +15,21 @@ services:
     image: ghcr.io/kabilaymen/quorum:latest # built by CI
     ports: !reset []
     mem_limit: 128m
+    cpu_shares: 4096 # 4x the default weight: heartbeats first when the VM is busy
     logging: *logging
     networks: [default, edge]
   node2:
     image: ghcr.io/kabilaymen/quorum:latest # built by CI
     ports: !reset []
     mem_limit: 128m
+    cpu_shares: 4096 # 4x the default weight: heartbeats first when the VM is busy
     logging: *logging
     networks: [default, edge]
   node3:
     image: ghcr.io/kabilaymen/quorum:latest # built by CI
     ports: !reset []
     mem_limit: 128m
+    cpu_shares: 4096 # 4x the default weight: heartbeats first when the VM is busy
     logging: *logging
     networks: [default, edge]
 

@@ -197,6 +197,20 @@ lagging nodes caught up without a single snapshot, so the test was not covering 
 
 With compaction, the demo no longer needs its 6-hour reset.
 
+## 12. A second storm, and what it was not
+
+Prometheus showed the term going from 146 to 646 between 11:39 and 11:56 one day, ~25 elections a
+minute, then nothing. It matched the first deployment of Vigil's stream processor on the same
+2-vCPU VM, which was being OOM-killed every ~10 s and restarted a full catch-up of Kafka's
+retained data each time. My explanation was CPU starvation delaying heartbeats, so I reproduced it:
+forced a full catch-up (processor ~100 % of a core, Kafka ~60 %, PostgreSQL ~65 % for 40 s) — and
+got no election at all. So a single bounded catch-up is not enough; the 17-minute crash loop
+(with 50 MiB fetches and some swapping) was. That loop is fixed on Vigil's side.
+
+What remains is about one stray election per 10 minutes outside the chaos rounds, cause not
+identified (no transport event, the same leader wins again). The raft nodes now get 4x the default
+CPU weight on the VM. A restarted node itself rejoins without forcing an election.
+
 ## Still missing
 
 - Membership changes.
