@@ -133,6 +133,41 @@ End result: ~3,450 writes/s, p50 4.65 ms; ~41,000/s without fsync.
   clients are now paced (2 ms between operations). Long runs (1,000 seeds, 20 s of partitions) run
   in CI; local defaults stay short.
 
+## 10. In production: an election storm the tests never showed
+
+Deployed on a small cloud VM, a cron job kills the current leader every 10 minutes and restarts
+it 20 s later. Failover itself worked (new leader in ~1–2 s), but after the old leader came back
+there were sometimes **~7 s of back-to-back elections**: the term jumped from 43 to 70, from 95
+to 124. A 5 s or 20 s kill done by hand did not reproduce it.
+
+Wrong turns, ruled out with measurements:
+- *Stale ARP entries* (Docker gives a restarted container a new random MAC): the peers' ARP
+  caches already had the new MAC.
+- *Writes into a dead connection*: first suspected, then wrongly ruled out because my `ss`
+  filter only listed ESTABLISHED sockets.
+
+What the logs showed once the transport reported dial failures and reconnections: during the
+whole outage no send ever failed, so no peer ever redialled. The restarted node could reach
+everyone over its fresh connections, but nobody reached it; it kept timing out, and without PreVote
+each of its candidacies bumped the term and deposed the leader. The storm ended at the first
+`broken pipe`, 26.6 s after the kill — the sum of TCP's doubling retransmission timeouts
+(0.2 + 0.4 + … + 12.8 = 25.4 s). After a short outage the next retransmission comes quickly,
+hence "sometimes".
+
+Fix: the outbound connection is write-only, so the transport now also reads from it; the read
+returns as soon as the peer closes the connection, and the next message redials.
+`TestTransportRedialsAfterPeerRestart` reproduces the situation (a peer that sent its FIN but
+never resets the connection, then a new peer on the same address) and fails without the fix.
+PreVote would also have contained it: the restarted node could not have bumped the term.
+
+Second finding: building the Docker images on the same 2-vCPU VM delayed heartbeats enough to
+trigger elections.
+
+Third finding, from the memory graph: with no log compaction, every entry stays in memory. About
+12,000 entries had added ~7 MB per node, so at 5 operations/s a node would hit its 128 MB limit in
+under a day. Until snapshots exist, the demo runs at 2 operations/s and its data is wiped every
+6 hours (the dashboard says so).
+
 ## Still missing
 
 - Snapshots / log compaction (the log grows forever; restart replays everything).

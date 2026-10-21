@@ -30,7 +30,7 @@ services:
   loadgen:
     build: .
     entrypoint: ["/loadgen"]
-    command: ["-rate", "5"]
+    command: ["-rate", "2"]
     depends_on: [node1, node2, node3]
     restart: unless-stopped
     mem_limit: 64m

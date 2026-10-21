@@ -19,7 +19,7 @@
    },
    "options": {
     "mode": "markdown",
-    "content": "**Quorum**: a 3-node key-value store on a from-scratch Raft implementation. A light client writes and reads continuously, and every 10 minutes the current leader is killed and restarted: watch the term go up, leadership move, and the commit index keep growing. [Code and design](https://github.com/kabilaymen/quorum)"
+    "content": "**Quorum**: a 3-node key-value store on a from-scratch Raft implementation. A light client writes and reads continuously, and every 10 minutes the current leader is killed and restarted: watch the term go up, leadership move, and the commit index keep growing. The data is wiped every 6 hours: log compaction (snapshots) is not implemented yet, so the log would otherwise grow without bound. [Code and design](https://github.com/kabilaymen/quorum)"
    }
   },
   {

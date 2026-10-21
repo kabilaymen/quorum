@@ -24,10 +24,12 @@ for repo in vigil quorum; do
 done
 (cd "$home/quorum/deploy/edge" && docker compose up -d)
 
-line="*/10 * * * * $home/quorum/deploy/chaos.sh >> $home/chaos.log 2>&1"
+chaos="*/10 * * * * $home/quorum/deploy/chaos.sh >> $home/chaos.log 2>&1"
+# The reset runs at minute 5, between two chaos rounds.
+reset="5 */6 * * * $home/quorum/deploy/reset-demo.sh >> $home/chaos.log 2>&1"
 # "|| true": with no crontab yet, grep matches nothing and set -e would stop
-# the block before the new line is written.
-{ crontab -l 2>/dev/null | grep -v 'deploy/chaos.sh' || true; echo "$line"; } | crontab -
+# the block before the new lines are written.
+{ crontab -l 2>/dev/null | grep -v -e 'deploy/chaos.sh' -e 'deploy/reset-demo.sh' || true; echo "$chaos"; echo "$reset"; } | crontab -
 
 docker compose ls
 echo "Grafana admin password: $home/.grafana-admin"
