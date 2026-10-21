@@ -37,11 +37,13 @@ func newMetrics() *metrics {
 	m.elections = prometheus.NewCounter(prometheus.CounterOpts{Name: "quorum_raft_leader_changes_total", Help: "Times this node became leader."})
 	m.walSync = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name: "quorum_wal_save_seconds", Help: "Duration of a WAL save (write + fsync).",
-		Buckets: prometheus.ExponentialBuckets(0.00005, 2, 16),
+		// Factor 1.5 rather than 2: with doubling buckets, a p50 around 10 ms
+		// interpolates inside [6.4, 12.8] ms and shows as a flat line.
+		Buckets: prometheus.ExponentialBuckets(0.00005, 1.5, 28),
 	})
 	m.requests = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name: "quorum_request_seconds", Help: "Client request latency on this node, by operation and outcome.",
-		Buckets: prometheus.ExponentialBuckets(0.0001, 2, 16),
+		Buckets: prometheus.ExponentialBuckets(0.0001, 1.5, 30),
 	}, []string{"op", "outcome"})
 	m.watchers = prometheus.NewGauge(prometheus.GaugeOpts{Name: "quorum_watch_streams", Help: "Open invalidation streams."})
 	m.dropped = prometheus.NewCounter(prometheus.CounterOpts{Name: "quorum_watch_dropped_total", Help: "Watch streams closed because the client was too slow."})

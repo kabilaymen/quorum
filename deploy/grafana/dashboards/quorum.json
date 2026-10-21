@@ -102,19 +102,24 @@
       "lastNotNull"
      ]
     },
-    "colorMode": "value",
+    "colorMode": "none",
     "graphMode": "none",
     "textMode": "value"
    },
    "fieldConfig": {
-    "defaults": {},
+    "defaults": {
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "text"
+     }
+    },
     "overrides": []
    },
-   "description": "Raft term: increases with every election."
+   "description": "Raft term: a logical clock that increases with every election. Large values are normal on a cluster whose leader is killed every 10 minutes."
   },
   {
    "type": "stat",
-   "title": "Leader changes (24 h)",
+   "title": "Leader changes (last hour)",
    "gridPos": {
     "x": 14,
     "y": 3,
@@ -123,7 +128,7 @@
    },
    "targets": [
     {
-     "expr": "sum(increase(quorum_raft_leader_changes_total[24h]))",
+     "expr": "round(sum(increase(quorum_raft_leader_changes_total[1h])))",
      "legendFormat": "",
      "instant": true
     }
@@ -134,14 +139,20 @@
       "lastNotNull"
      ]
     },
-    "colorMode": "value",
+    "colorMode": "none",
     "graphMode": "none",
     "textMode": "value"
    },
    "fieldConfig": {
-    "defaults": {},
+    "defaults": {
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "text"
+     }
+    },
     "overrides": []
-   }
+   },
+   "description": "About 6 expected: one per chaos round (every 10 minutes)."
   },
   {
    "type": "stat",
@@ -170,9 +181,28 @@
     "textMode": "value"
    },
    "fieldConfig": {
-    "defaults": {},
+    "defaults": {
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 2
+       },
+       {
+        "color": "green",
+        "value": 3
+       }
+      ]
+     }
+    },
     "overrides": []
-   }
+   },
+   "description": "2 for about 20 s after each chaos round, while the killed node restarts."
   },
   {
    "type": "timeseries",
@@ -217,7 +247,7 @@
   },
   {
    "type": "timeseries",
-   "title": "Client requests per second (served by each node)",
+   "title": "Client requests per second, by operation and outcome",
    "gridPos": {
     "x": 0,
     "y": 15,
@@ -289,7 +319,7 @@
   },
   {
    "type": "timeseries",
-   "title": "Raft messages per second",
+   "title": "Raft messages sent per second (the leader sends the most)",
    "gridPos": {
     "x": 12,
     "y": 23,
@@ -334,7 +364,7 @@
   },
   {
    "type": "timeseries",
-   "title": "Snapshots (taken / installed from the leader)",
+   "title": "Snapshots per 10 minutes (taken / installed from the leader)",
    "gridPos": {
     "x": 12,
     "y": 31,
