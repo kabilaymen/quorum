@@ -1,0 +1,44 @@
+{
+  "env": "windows/amd64, 20 CPUs, single machine (loopback)",
+  "nodes": 3,
+  "clients": 16,
+  "fsync": true,
+  "value_size": 64,
+  "writes": {
+    "ops": 27962,
+    "errors": 0,
+    "ops_per_sec": 3494.285882846349,
+    "p50_ms": 4.6461,
+    "p99_ms": 5.8943,
+    "p999_ms": 10.1173,
+    "mean_ms": 4.578904112724412
+  },
+  "linearizable_reads": {
+    "ops": 27786,
+    "errors": 0,
+    "ops_per_sec": 3472.385896769589,
+    "p50_ms": 4.6537,
+    "p99_ms": 6.2316,
+    "p999_ms": 10.3686,
+    "mean_ms": 4.60778279709206
+  },
+  "cached_reads": {
+    "ops": 360873,
+    "errors": 0,
+    "ops_per_sec": 45064.10989732219,
+    "p50_ms": 0,
+    "p99_ms": 5.7901,
+    "p999_ms": 6.7187,
+    "mean_ms": 0.35504972885197844,
+    "hit_rate": 0.9308094537413439
+  },
+  "failover_ms": [
+    203.621,
+    605.087,
+    236.373,
+    355.48,
+    403.311,
+    613.949,
+    203.051
+  ]
+}
