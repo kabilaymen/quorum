@@ -24,8 +24,16 @@ for repo in quorum vigil; do
   fi
 done
 
+# Images come from GHCR (built by CI). Building on this small VM is only a
+# fallback: it competes with the raft nodes for CPU and triggers elections.
 for repo in vigil quorum; do
-  (cd "$home/$repo" && docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --remove-orphans)
+  (
+    cd "$home/$repo"
+    c="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+    build=""
+    $c pull -q || { echo "$repo: pull failed, building on the VM"; build="--build"; }
+    $c up -d $build --remove-orphans
+  )
 done
 (cd "$home/quorum/deploy/edge" && docker compose up -d)
 

@@ -8,6 +8,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /quorum ./cmd/quorum \
  && mkdir /data
 
 FROM gcr.io/distroless/static-debian12:nonroot
+LABEL org.opencontainers.image.source=https://github.com/kabilaymen/quorum
 COPY --from=build /quorum /loadgen /
 # named volumes copy this directory's ownership: the non-root user can write the WAL
 COPY --from=build --chown=65532:65532 /data /data

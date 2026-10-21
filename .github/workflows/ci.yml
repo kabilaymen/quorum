@@ -16,8 +16,19 @@ jobs:
         run: RAFT_SEEDS=500 go test -run Randomized ./raft
       - name: Linearizability under partitions (20 s)
         run: LIN_SECONDS=20 go test -timeout 10m -run Linearizable ./server
+  # Images are built here, not on the demo VM: compiling on its 2 vCPUs
+  # delayed heartbeats enough to trigger elections (JOURNAL.md, section 10).
   image:
+    needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
-      - run: docker build .
+      - run: docker build -t ghcr.io/kabilaymen/quorum:${{ github.sha }} -t ghcr.io/kabilaymen/quorum:latest .
+      - name: Publish to GHCR (main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push --all-tags ghcr.io/kabilaymen/quorum
