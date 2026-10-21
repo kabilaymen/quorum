@@ -25,7 +25,9 @@ done
 (cd "$home/quorum/deploy/edge" && docker compose up -d)
 
 line="*/10 * * * * $home/quorum/deploy/chaos.sh >> $home/chaos.log 2>&1"
-(crontab -l 2>/dev/null | grep -v 'deploy/chaos.sh'; echo "$line") | crontab -
+# "|| true": with no crontab yet, grep matches nothing and set -e would stop
+# the block before the new line is written.
+{ crontab -l 2>/dev/null | grep -v 'deploy/chaos.sh' || true; echo "$line"; } | crontab -
 
 docker compose ls
 echo "Grafana admin password: $home/.grafana-admin"
