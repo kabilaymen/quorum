@@ -2,6 +2,7 @@ package raft
 
 import (
 	"bytes"
+	"encoding/gob"
 	"fmt"
 	"math/rand"
 	"os"
@@ -27,11 +28,36 @@ type cluster struct {
 	round   int
 	preVote bool
 	noCheck bool // disable CheckQuorum (and with it the leader lease on votes)
+	// snapEvery > 0: a node compacts its log once that many applied entries
+	// are past its snapshot. The snapshot is the node's whole applied list,
+	// so State Machine Safety is still checked entry by entry.
+	snapEvery int
+	installs  map[NodeID]int // snapshots received from a leader
 }
 
 type savedState struct {
 	hs      HardState
-	entries []Entry
+	snap    Snapshot
+	entries []Entry // the log after snap.Index
+}
+
+func encodeApplied(a []Entry) []byte {
+	var b bytes.Buffer
+	if err := gob.NewEncoder(&b).Encode(a); err != nil {
+		panic(err)
+	}
+	return b.Bytes()
+}
+
+func decodeApplied(data []byte) []Entry {
+	if len(data) == 0 {
+		return nil
+	}
+	var a []Entry
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&a); err != nil {
+		panic(err)
+	}
+	return a
 }
 
 type inflight struct {
@@ -48,6 +74,7 @@ func newClusterWith(t *testing.T, n int, seed int64, preVote bool) *cluster {
 		t: t, rand: rand.New(rand.NewSource(seed)), preVote: preVote,
 		nodes: map[NodeID]*Node{}, down: map[NodeID]bool{}, disk: map[NodeID]*savedState{},
 		cut: map[[2]NodeID]bool{}, applied: map[NodeID][]Entry{}, leaders: map[uint64]NodeID{},
+		installs: map[NodeID]int{},
 	}
 	for i := 1; i <= n; i++ {
 		c.ids = append(c.ids, NodeID(i))
@@ -102,17 +129,39 @@ func (c *cluster) collect() {
 		// Crashes restart from this disk, so a Ready that forgets something
 		// (a vote, an acknowledged entry) shows up as a safety violation.
 		d := c.disk[id]
+		if s := rd.Snapshot; s != nil {
+			// Same rule as the node: keep the stored suffix only if the stored
+			// log holds the snapshot's last entry.
+			pos := int(s.Index) - int(d.snap.Index) - 1
+			if pos >= 0 && pos < len(d.entries) && d.entries[pos].Term == s.Term {
+				d.entries = append([]Entry(nil), d.entries[pos+1:]...)
+			} else {
+				d.entries = nil
+			}
+			d.snap = *s
+			c.applied[id] = decodeApplied(s.Data)
+			c.installs[id]++
+		}
 		if rd.HardState != nil {
 			d.hs = *rd.HardState
 		}
 		if len(rd.Entries) > 0 {
-			first := rd.Entries[0].Index
-			if first > uint64(len(d.entries))+1 {
-				c.t.Fatalf("node %d: Ready.Entries start at %d but disk ends at %d", id, first, len(d.entries))
+			pos := rd.Entries[0].Index - d.snap.Index - 1
+			if pos > uint64(len(d.entries)) {
+				c.t.Fatalf("node %d: Ready.Entries start at %d but disk ends at %d", id, rd.Entries[0].Index, d.snap.Index+uint64(len(d.entries)))
 			}
-			d.entries = append(d.entries[:first-1], rd.Entries...)
+			d.entries = append(d.entries[:pos], rd.Entries...)
 		}
 		c.applied[id] = append(c.applied[id], rd.Committed...)
+		if n := c.nodes[id]; c.snapEvery > 0 && n.AppliedIndex() >= n.FirstIndex()-1+uint64(c.snapEvery) {
+			s, err := n.Compact(n.AppliedIndex(), encodeApplied(c.applied[id]))
+			if err != nil {
+				c.t.Fatal(err)
+			}
+			pos := s.Index - d.snap.Index - 1
+			d.entries = append([]Entry(nil), d.entries[pos+1:]...)
+			d.snap = s
+		}
 		for _, m := range rd.Messages {
 			if c.rand.Float64() < c.dropP {
 				continue
@@ -191,8 +240,9 @@ func (c *cluster) crash(id NodeID) {
 
 func (c *cluster) restart(id NodeID) {
 	s := c.disk[id]
-	c.nodes[id] = Restart(c.config(id, int64(c.round)), s.hs, append([]Entry(nil), s.entries...))
-	c.applied[id] = nil // the state machine is rebuilt by replaying the log
+	c.nodes[id] = RestartFromSnapshot(c.config(id, int64(c.round)), s.hs, s.snap, append([]Entry(nil), s.entries...))
+	// The state machine is loaded from the snapshot, then rebuilt by replaying the log.
+	c.applied[id] = decodeApplied(s.snap.Data)
 	c.down[id] = false
 }
 
@@ -353,24 +403,43 @@ func TestRestartKeepsTermAndVote(t *testing.T) {
 // partitions and crash/restarts while proposals keep flowing, checking safety
 // after every round, then checks liveness once the faults stop.
 func TestRandomizedFaults(t *testing.T) {
-	runRandomized(t, 5, 0.01, 0.03, false)
+	runRandomized(t, 5, 0.01, 0.03, false, 0)
 }
 
 func TestRandomizedFaultsPreVote(t *testing.T) {
-	runRandomized(t, 5, 0.01, 0.03, true)
+	runRandomized(t, 5, 0.01, 0.03, true, 0)
+}
+
+// TestRandomizedFaultsSnapshots compacts every few entries, so lagging and
+// restarted nodes regularly need a snapshot from the leader.
+func TestRandomizedFaultsSnapshots(t *testing.T) {
+	n := runRandomized(t, 5, 0.01, 0.03, true, 10)
+	t.Logf("followers installed %d snapshots", n)
+	if n == 0 {
+		t.Fatal("no snapshot was ever installed: the test does not exercise them")
+	}
 }
 
 // TestRandomizedCrashChurn: 3 nodes crashing and restarting constantly, the
 // setting where forgetting a vote or an entry on restart breaks safety.
 func TestRandomizedCrashChurn(t *testing.T) {
-	runRandomized(t, 3, 0.08, 0.25, false)
+	runRandomized(t, 3, 0.08, 0.25, false, 0)
 }
 
 func TestRandomizedCrashChurnPreVote(t *testing.T) {
-	runRandomized(t, 3, 0.08, 0.25, true)
+	runRandomized(t, 3, 0.08, 0.25, true, 0)
 }
 
-func runRandomized(t *testing.T, size int, crashP, restartP float64, preVote bool) {
+func TestRandomizedCrashChurnSnapshots(t *testing.T) {
+	n := runRandomized(t, 3, 0.08, 0.25, true, 10)
+	t.Logf("followers installed %d snapshots", n)
+	if n == 0 {
+		t.Fatal("no snapshot was ever installed: the test does not exercise them")
+	}
+}
+
+// runRandomized returns how many snapshots followers installed in total.
+func runRandomized(t *testing.T, size int, crashP, restartP float64, preVote bool, snapEvery int) (installs int) {
 	seeds := 40
 	if testing.Short() {
 		seeds = 5
@@ -381,6 +450,12 @@ func runRandomized(t *testing.T, size int, crashP, restartP float64, preVote boo
 	for seed := int64(100); seed < 100+int64(seeds); seed++ {
 		t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) {
 			c := newClusterWith(t, size, seed, preVote)
+			c.snapEvery = snapEvery
+			defer func() {
+				for _, n := range c.installs {
+					installs += n
+				}
+			}()
 			c.dropP = 0.1
 			c.maxLag = 3
 			proposed := 0
@@ -454,6 +529,7 @@ func runRandomized(t *testing.T, size int, crashP, restartP float64, preVote boo
 			}
 		})
 	}
+	return installs
 }
 
 func TestIsolatedLeaderStepsDown(t *testing.T) {
