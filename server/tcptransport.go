@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/gob"
+	"io"
 	"log/slog"
 	"net"
 	"sync"
@@ -73,6 +74,11 @@ func (t *TCPTransport) sendLoop(id raft.NodeID, p *peer) {
 	defer t.wg.Done()
 	var conn net.Conn
 	var enc *gob.Encoder
+	// The peer never writes on this connection, so a read only returns when
+	// the peer closes it. Without this, a peer that died and came back stays
+	// unreachable until a write fails, which TCP's backed-off retransmissions
+	// can delay by many seconds (see JOURNAL.md, section 10).
+	var closed chan struct{}
 	// Outage bookkeeping, logged once when the peer becomes unreachable and
 	// once when it is back, so failovers can be lined up with elections.
 	var failedDials int
@@ -84,6 +90,10 @@ func (t *TCPTransport) sendLoop(id raft.NodeID, p *peer) {
 				conn.Close()
 			}
 			return
+		case <-closed:
+			t.log.Info("peer closed the connection", "peer", id)
+			conn.Close()
+			conn, closed = nil, nil
 		case m := <-p.queue:
 			if conn == nil {
 				c, err := net.DialTimeout("tcp", p.addr, 500*time.Millisecond)
@@ -100,12 +110,17 @@ func (t *TCPTransport) sendLoop(id raft.NodeID, p *peer) {
 					failedDials = 0
 				}
 				conn, enc = c, gob.NewEncoder(c)
+				closed = make(chan struct{})
+				go func(c net.Conn, closed chan struct{}) {
+					io.Copy(io.Discard, c) // returns on EOF, reset, or our own Close
+					close(closed)
+				}(c, closed)
 			}
 			conn.SetWriteDeadline(time.Now().Add(time.Second))
 			if err := enc.Encode(&m); err != nil {
 				t.log.Info("send failed, closing connection", "peer", id, "err", err)
 				conn.Close()
-				conn = nil
+				conn, closed = nil, nil
 			}
 		}
 	}
