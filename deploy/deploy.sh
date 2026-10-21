@@ -15,14 +15,18 @@ git -C "$home/vigil" pull --ff-only
 
 docker network inspect edge >/dev/null 2>&1 || docker network create edge
 
-# One Grafana admin password, generated once and kept only on the VM.
+# Secrets are generated on the VM, once, and never leave it. Keys added in a
+# later version are appended to an existing .env.
+ensure() { # file key value
+  grep -q "^$2=" "$1" 2>/dev/null || printf '%s=%s\n' "$2" "$3" >> "$1"
+}
+[ -f "$home/.grafana-admin" ] || { umask 077; openssl rand -base64 18 > "$home/.grafana-admin"; }
 for repo in quorum vigil; do
-  if [ ! -f "$home/$repo/.env" ]; then
-    [ -f "$home/.grafana-admin" ] || { umask 077; openssl rand -base64 18 > "$home/.grafana-admin"; }
-    printf 'GRAFANA_ADMIN_PASSWORD=%s\n' "$(cat "$home/.grafana-admin")" > "$home/$repo/.env"
-    chmod 600 "$home/$repo/.env"
-  fi
+  (umask 077; touch "$home/$repo/.env")
+  ensure "$home/$repo/.env" GRAFANA_ADMIN_PASSWORD "$(cat "$home/.grafana-admin")"
 done
+ensure "$home/vigil/.env" POSTGRES_PASSWORD "$(openssl rand -hex 16)"
+ensure "$home/vigil/.env" GRAFANA_DB_PASSWORD "$(openssl rand -hex 16)"
 
 # Images come from GHCR (built by CI). Building on this small VM is only a
 # fallback: it competes with the raft nodes for CPU and triggers elections.
