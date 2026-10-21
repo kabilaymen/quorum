@@ -242,8 +242,8 @@ func (n *Node) Compact(index uint64, data []byte) (Snapshot, error) {
 	n.log = append([]Entry{{Term: n.snap.Term, Index: index}}, n.log[index-n.offset()+1:]...)
 	return n.snap, nil
 }
-func (n *Node) lastTerm() uint64       { return n.log[len(n.log)-1].Term }
-func (n *Node) quorum() int            { return len(n.cfg.Peers)/2 + 1 }
+func (n *Node) lastTerm() uint64 { return n.log[len(n.log)-1].Term }
+func (n *Node) quorum() int      { return len(n.cfg.Peers)/2 + 1 }
 
 func (n *Node) send(m Message) {
 	m.From = n.cfg.ID
