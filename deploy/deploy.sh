@@ -4,8 +4,13 @@
 #   sh ~/quorum/deploy/deploy.sh
 set -eu
 home=$HOME
+# Pull first, then restart on the updated copy of this script: sh reads a
+# script as it runs, so the old version would otherwise finish the job.
+if [ "${1:-}" != "--pulled" ]; then
+  git -C "$home/quorum" pull --ff-only
+  exec sh "$home/quorum/deploy/deploy.sh" --pulled
+fi
 [ -d "$home/vigil" ] || git clone https://github.com/kabilaymen/vigil.git "$home/vigil"
-git -C "$home/quorum" pull --ff-only
 git -C "$home/vigil" pull --ff-only
 
 docker network inspect edge >/dev/null 2>&1 || docker network create edge
