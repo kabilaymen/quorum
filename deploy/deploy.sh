@@ -1,0 +1,31 @@
+#!/bin/sh
+# Starts (or updates) both demos and the Caddy edge on the VM. Idempotent:
+# re-run it after a git pull to redeploy.
+#   sh ~/quorum/deploy/deploy.sh
+set -eu
+home=$HOME
+[ -d "$home/vigil" ] || git clone https://github.com/kabilaymen/vigil.git "$home/vigil"
+git -C "$home/quorum" pull --ff-only
+git -C "$home/vigil" pull --ff-only
+
+docker network inspect edge >/dev/null 2>&1 || docker network create edge
+
+# One Grafana admin password, generated once and kept only on the VM.
+for repo in quorum vigil; do
+  if [ ! -f "$home/$repo/.env" ]; then
+    [ -f "$home/.grafana-admin" ] || { umask 077; openssl rand -base64 18 > "$home/.grafana-admin"; }
+    printf 'GRAFANA_ADMIN_PASSWORD=%s\n' "$(cat "$home/.grafana-admin")" > "$home/$repo/.env"
+    chmod 600 "$home/$repo/.env"
+  fi
+done
+
+for repo in vigil quorum; do
+  (cd "$home/$repo" && docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --remove-orphans)
+done
+(cd "$home/quorum/deploy/edge" && docker compose up -d)
+
+line="*/10 * * * * $home/quorum/deploy/chaos.sh >> $home/chaos.log 2>&1"
+(crontab -l 2>/dev/null | grep -v 'deploy/chaos.sh'; echo "$line") | crontab -
+
+docker compose ls
+echo "Grafana admin password: $home/.grafana-admin"
