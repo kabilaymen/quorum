@@ -44,6 +44,13 @@ for repo in vigil quorum; do
 done
 (cd "$home/quorum/deploy/edge" && docker compose up -d)
 
+# Every deployment pulls new images; without this, old ones (and the build
+# cache from the days images were built here) pile up on the disk.
+docker image prune -f >/dev/null
+docker builder prune -f >/dev/null
+# Keep the chaos log short.
+[ -f "$home/chaos.log" ] && tail -n 2000 "$home/chaos.log" > "$home/chaos.log.tmp" && mv "$home/chaos.log.tmp" "$home/chaos.log"
+
 chaos="*/10 * * * * $home/quorum/deploy/chaos.sh >> $home/chaos.log 2>&1"
 # The log is compacted (snapshots), so the cluster no longer needs periodic
 # resets; deploy/reset-demo.sh stays available for a manual one. Older

@@ -19,7 +19,7 @@
    },
    "options": {
     "mode": "markdown",
-    "content": "**Quorum**: a 3-node key-value store on a from-scratch Raft implementation. A light client writes and reads continuously, and every 10 minutes the current leader is killed and restarted: watch the term go up, leadership move, and the commit index keep growing. The log is compacted every 1,000 entries (snapshots), so memory stays flat however long it runs. [Code and design](https://github.com/kabilaymen/quorum)"
+    "content": "**Quorum**: a 3-node key-value store on a from-scratch Raft implementation. A light client writes and reads continuously, and every 10 minutes the current leader is killed and restarted: watch the term go up, leadership move, and commits keep flowing. The log is compacted every 1,000 entries (snapshots), so memory stays flat however long it runs. [Code and design](https://github.com/kabilaymen/quorum)"
    }
   },
   {
@@ -206,7 +206,7 @@
   },
   {
    "type": "timeseries",
-   "title": "Commit index per node",
+   "title": "Entries committed per second",
    "gridPos": {
     "x": 0,
     "y": 7,
@@ -215,15 +215,17 @@
    },
    "targets": [
     {
-     "expr": "max by (node) (quorum_raft_commit_index)",
+     "expr": "max by (node) (rate(quorum_raft_commit_index[1m]))",
      "legendFormat": "node {{node}}"
     }
    ],
    "fieldConfig": {
-    "defaults": {},
+    "defaults": {
+     "unit": "short"
+    },
     "overrides": []
    },
-   "description": "Keeps growing through failovers; a restarted node catches up from the leader's log."
+   "description": "How fast the cluster agrees on new log entries (client writes and reads, plus one empty entry per new leader). It keeps going through failovers; a restarted node catches up within seconds."
   },
   {
    "type": "timeseries",
