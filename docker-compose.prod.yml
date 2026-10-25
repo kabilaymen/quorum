@@ -44,11 +44,14 @@ services:
     logging: *logging
 
   prometheus:
-    image: prom/prometheus:v3.1.0
+    image: prom/prometheus:v3.5.5
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=7d
+      # Dashboards are public: cap what a single query may cost.
+      - --query.timeout=10s
+      - --query.max-samples=5000000
     volumes:
       - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus:/prometheus
@@ -57,7 +60,7 @@ services:
     logging: *logging
 
   grafana:
-    image: grafana/grafana:11.4.0
+    image: grafana/grafana:12.4.13
     environment:
       GF_SERVER_ROOT_URL: https://quorum.aymenkabil.me
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set it in .env}
@@ -66,6 +69,9 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/quorum.json
       GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_AUTH_ANONYMOUS_HIDE_VERSION: "true"
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_METRICS_ENABLED: "false"
     volumes:
       - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro

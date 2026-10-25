@@ -4,7 +4,7 @@ name: edge
 
 services:
   caddy:
-    image: caddy:2.8.4
+    image: caddy:2.11.7
     ports: ["80:80", "443:443", "443:443/udp"]
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
