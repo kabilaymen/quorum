@@ -223,6 +223,9 @@ is descheduled or stuck on an fsync for a few hundred milliseconds.
 The demo now runs with 20 ms ticks, i.e. a 300–600 ms election timeout (etcd's default is 1 s).
 Failovers there take a little longer; the benchmark keeps its own 10 ms setting.
 
+First full hour after the change: the term rose by 6, one election per chaos round and none
+else (11 to 17 an hour over the eight hours before). One hour is a small sample; to be watched.
+
 ## Still missing
 
 - Membership changes.
