@@ -4,6 +4,9 @@
 #   */10 * * * * /home/aymen/quorum/deploy/chaos.sh >> /home/aymen/chaos.log 2>&1
 set -eu
 cd "$(dirname "$0")/.."
+# Keep the log this script appends to (via cron) short.
+log="$HOME/chaos.log"
+[ "$(wc -l < "$log" 2>/dev/null || echo 0)" -gt 3000 ] && tail -n 2000 "$log" > "$log.tmp" && mv "$log.tmp" "$log"
 compose="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
 
 leader=$(curl -fsS --max-time 3 https://quorum.aymenkabil.me/status | jq -r '.leader')

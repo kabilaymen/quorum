@@ -211,6 +211,18 @@ What remains is about one stray election per 10 minutes outside the chaos rounds
 identified (no transport event, the same leader wins again). The raft nodes now get 4x the default
 CPU weight on the VM. A restarted node itself rejoins without forcing an election.
 
+## 13. Longer election timeout on the shared VM
+
+Over a day the term rose by about 14 an hour, for 6 chaos rounds: more than two elections per
+round where one is expected. The logs show the extra ones right after a killed node comes back,
+or on their own, always won again by a healthy node, with no transport error. The VM is two
+burstable vCPUs shared with Vigil (Kafka, PostgreSQL, two Grafanas), with bursts at 60 % CPU,
+some I/O wait and swap in use; 150–300 ms of election timeout leaves little room for a node that
+is descheduled or stuck on an fsync for a few hundred milliseconds.
+
+The demo now runs with 20 ms ticks, i.e. a 300–600 ms election timeout (etcd's default is 1 s).
+Failovers there take a little longer; the benchmark keeps its own 10 ms setting.
+
 ## Still missing
 
 - Membership changes.

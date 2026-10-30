@@ -11,8 +11,12 @@ x-logging: &logging
 services:
   # "ports: !reset" has to be written on each service: the tag is lost through
   # a YAML anchor.
+  # 20 ms ticks (election timeout 300-600 ms instead of 150-300 ms): this VM is
+  # shared with Vigil, and CPU or disk hiccups of a few hundred ms caused
+  # elections that no failure explained (JOURNAL.md, section 13).
   node1:
     image: ghcr.io/kabilaymen/quorum:latest # built by CI
+    command: ["-id", "1", "-peers", "1=node1:7000,2=node2:7000,3=node3:7000", "-data", "/data", "-tick", "20ms"]
     ports: !reset []
     mem_limit: 128m
     cpu_shares: 4096 # 4x the default weight: heartbeats first when the VM is busy
@@ -20,6 +24,7 @@ services:
     networks: [default, edge]
   node2:
     image: ghcr.io/kabilaymen/quorum:latest # built by CI
+    command: ["-id", "2", "-peers", "1=node1:7000,2=node2:7000,3=node3:7000", "-data", "/data", "-tick", "20ms"]
     ports: !reset []
     mem_limit: 128m
     cpu_shares: 4096 # 4x the default weight: heartbeats first when the VM is busy
@@ -27,6 +32,7 @@ services:
     networks: [default, edge]
   node3:
     image: ghcr.io/kabilaymen/quorum:latest # built by CI
+    command: ["-id", "3", "-peers", "1=node1:7000,2=node2:7000,3=node3:7000", "-data", "/data", "-tick", "20ms"]
     ports: !reset []
     mem_limit: 128m
     cpu_shares: 4096 # 4x the default weight: heartbeats first when the VM is busy
