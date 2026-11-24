@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quorum: Raft in the browser</title>
+  <meta name="description" content="A five-node Raft cluster running in your browser. Stop the leader, cut nodes off the network, lose messages, and watch it recover.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="wrap top">
+  <a class="brand" href="https://github.com/kabilaymen/quorum">Quorum</a>
+  <nav>
+    <a href="https://github.com/kabilaymen/quorum">Code</a>
+    <a href="https://github.com/kabilaymen/quorum/blob/main/JOURNAL.md">Journal</a>
+    <a href="https://github.com/kabilaymen/quorum/blob/main/bench/RESULTS.md">Benchmarks</a>
+  </nav>
+</header>
+
+<main class="wrap">
+  <section class="intro">
+    <h1>A Raft cluster you can break</h1>
+    <p>Quorum is a replicated key-value store I built on my own implementation of Raft, in Go. The five
+      nodes below run that code, compiled to WebAssembly, in your browser. Stop them, cut them off the
+      network or make messages get lost, and see how the cluster keeps its data consistent.</p>
+  </section>
+
+  <section class="demo" aria-label="Interactive cluster">
+    <div class="stage">
+      <svg id="ring" viewBox="0 0 400 390" role="img" aria-label="Cluster diagram"></svg>
+      <p class="caption" id="caption">Starting the cluster…</p>
+      <p class="meta" id="meta"></p>
+    </div>
+
+    <aside class="side">
+      <h2>Try this</h2>
+      <ol class="steps">
+        <li><button id="put">Write a key</button>
+          <span>The leader adds it to its log. It counts as written once three of the five nodes have it.</span></li>
+        <li><button id="killLeader">Stop the leader</button>
+          <span>The others stop hearing it and elect a new leader, usually within a third of a second.</span></li>
+        <li><button id="restartLast" disabled>Restart it</button>
+          <span>It comes back from what it had saved on disk, as a follower, and catches up.</span></li>
+      </ol>
+
+      <div class="node-panel" id="panel">
+        <div class="panel-head">
+          <h2 id="panelTitle">Node 1</h2>
+          <div class="panel-actions">
+            <button id="power">Stop</button>
+            <button id="net">Disconnect</button>
+          </div>
+        </div>
+        <dl class="facts" id="facts"></dl>
+        <p class="small" id="disk"></p>
+        <table class="log"><thead><tr><th>Index</th><th>Term</th><th>Entry</th></tr></thead><tbody id="log"></tbody></table>
+        <p class="small mono" id="keys"></p>
+      </div>
+    </aside>
+
+    <div class="bar">
+      <label>Lost messages <input type="range" id="loss" min="0" max="30" value="0"> <output id="lossv">0%</output></label>
+      <label>Speed
+        <select id="speed"><option value="0.25">Slow</option><option value="1" selected>Real time</option><option value="4">Fast</option></select>
+      </label>
+      <button id="pause">Pause</button>
+      <button id="reset" class="link">New cluster</button>
+    </div>
+  </section>
+
+  <section class="cols">
+    <div>
+      <h2>What happened</h2>
+      <ol class="events" id="events"></ol>
+    </div>
+    <div class="aside-text">
+      <h2>How to read the diagram</h2>
+      <p>A line between two nodes means they exchanged messages in the last few milliseconds. Grey lines
+        carry log entries and heartbeats, orange lines carry votes during an election, blue lines carry a
+        snapshot to a node that fell too far behind.</p>
+      <p>After every step the page checks Raft's two safety rules: there is never more than one leader in
+        a term, and no two nodes ever store different entries at the same position of the log. The
+        counter under the diagram shows how many checks have passed.</p>
+      <p class="small">The network, the disks and the clock are simulated here (one tick is 10 ms). The
+        TCP transport and the write-ahead log on a real disk are not on this page: they ran in
+        production, below.</p>
+    </div>
+  </section>
+
+  <section class="prod">
+    <h2>How it ran in production</h2>
+    <p>The full system, three nodes talking over TCP and writing a checksummed log to disk with fsync,
+      ran on a small cloud VM from October to November 2026. A script stopped the current leader every
+      ten minutes and restarted it 20 seconds later, while a client kept reading and writing. Over its
+      last seven days:</p>
+    <div class="stats" id="stats"></div>
+    <div class="charts">
+      <figure><canvas id="latChart" width="640" height="220"></canvas>
+        <figcaption>Write latency in milliseconds, <span class="sw green"></span>median and <span class="sw amber"></span>99th percentile</figcaption></figure>
+      <figure><canvas id="electChart" width="640" height="220"></canvas>
+        <figcaption>Leader changes per hour</figcaption></figure>
+    </div>
+    <p class="small">Numbers come from the cluster's own Prometheus metrics, exported on 24 November 2026.
+      Benchmarks on a 4-core CI machine: about 6,000 durable writes per second, failover in 212 ms at the
+      median (<a href="https://github.com/kabilaymen/quorum/blob/main/bench/RESULTS.md">details</a>).</p>
+  </section>
+</main>
+
+<footer class="wrap">Built by <a href="https://aymenkabil.me">Aymen Kabil</a>. Source on <a href="https://github.com/kabilaymen/quorum">GitHub</a>.</footer>
+
+<script src="wasm_exec.js"></script>
+<script src="app.js"></script>
+<script src="production.js"></script>
+</body>
+</html>

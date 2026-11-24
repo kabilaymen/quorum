@@ -4,8 +4,11 @@ A replicated, linearizable key-value store built on a from-scratch implementatio
 [Raft](https://raft.github.io/raft.pdf), tested against message loss, partitions and crashes.
 
 > Status: Raft core (CheckQuorum, PreVote, log compaction with snapshot transfer), replicated KV,
-> write-ahead log, coherent client cache, HTTP API, TCP transport. Deployed on a small cloud VM:
-> **[live dashboard](https://quorum.aymenkabil.me)**, where the leader is killed every 10 minutes.
+> write-ahead log, coherent client cache, HTTP API, TCP transport. Ran on a small cloud VM from
+> October to November 2026, with the leader killed every 10 minutes.
+> **[Interactive demo](https://quorum.aymenkabil.me)**: the `raft` and `kv` packages compiled to
+> WebAssembly, a 5-node cluster in your browser where you kill, restart and cut off nodes while both
+> safety properties are checked after every step; with the measurements recorded in production.
 > Next: k3s, membership changes.
 
 How it was built, the bugs found on the way and how they were fixed: [`JOURNAL.md`](JOURNAL.md).
